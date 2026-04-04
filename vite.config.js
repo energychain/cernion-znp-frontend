@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 5173,
+    allowedHosts: ['znp.corrently.io'],
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
