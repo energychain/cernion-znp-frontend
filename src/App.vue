@@ -77,9 +77,9 @@ const selectVnb = async () => {
   }).addTo(map.value)
   
   // Real Backend Logic kicks in: Create Workspace & Load MaStR
-  uploadComplete.value = false
   targetLayer.value = 0
   gFactorResult.value = null
+  znpStore.layerStatus = { 0: false, 1: false, 2: false }
   
   // Create Project in Backend (via Pinia Store)
   const bbox = { south: 49.38, west: 8.63, north: 49.43, east: 8.74 }
@@ -99,15 +99,23 @@ const selectVnb = async () => {
   updateKpi()
 }
 
-const simulateFileUpload = async () => {
-  // Triggers the "Chain of Thought" in the store
-  await znpStore.analyzePDFDocument("Mock PDF Content")
+const fileInput = ref(null)
+
+const triggerFileInput = () => {
+  if (fileInput.value) {
+    fileInput.value.click()
+  }
+}
+
+const handleFileUpload = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
   
-  setTimeout(() => {
-     uploadComplete.value = true
-     targetLayer.value = 2
-     updateKpi()
-  }, 2900)
+  await znpStore.analyzePDFDocument(file)
+  
+  // Auto-shift slider to Layer 2 to show the ROI
+  targetLayer.value = 2
+  updateKpi()
 }
 
 const updateKpi = async () => {
@@ -160,19 +168,21 @@ const updateKpi = async () => {
         <p class="text-xs text-gray-500 mb-3">Laden Sie unstrukturierte Veröffentlichungspflichten (PDF/XLSX/CSV) zur KI-Extraktion der realen Netzauslastung hoch.</p>
         
         <div 
-          @click="!uploadComplete && !znpStore.isProcessing ? simulateFileUpload() : null"
+          @click="!znpStore.layerStatus[2] && !znpStore.isProcessing ? triggerFileInput() : null"
           class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer transition-colors"
-          :class="uploadComplete ? 'bg-green-50 border-green-300' : 'hover:bg-blue-50 hover:border-blue-400'"
+          :class="znpStore.layerStatus[2] ? 'bg-green-50 border-green-300' : 'hover:bg-blue-50 hover:border-blue-400'"
         >
-          <div v-if="znpStore.isProcessing && !uploadComplete" class="text-blue-600 font-medium text-sm flex items-center justify-center gap-2">
+          <input type="file" ref="fileInput" @change="handleFileUpload" accept=".pdf,.csv,.xlsx" class="hidden" />
+
+          <div v-if="znpStore.isProcessing && !znpStore.layerStatus[2]" class="text-blue-600 font-medium text-sm flex items-center justify-center gap-2">
             <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
             Analysiere Dokumente...
           </div>
-          <div v-else-if="uploadComplete" class="text-green-600 font-medium text-sm">
+          <div v-else-if="znpStore.layerStatus[2]" class="text-green-600 font-medium text-sm">
             ✅ Lastspitzen extrahiert (Layer 2 aktiv)
           </div>
           <div v-else class="text-gray-600 font-medium text-sm">
-            📄 Dokumente hier ablegen (zz.B. StromNZV_23c.pdf)
+            📄 Dokumente hier ablegen (z.B. StromNZV_23c.pdf)
           </div>
         </div>
       </div>
@@ -193,9 +203,9 @@ const updateKpi = async () => {
         >
         
         <div class="flex justify-between text-xs text-gray-400 mb-2">
-          <span>L0 (MaStR)</span>
-          <span>L1 (OSM)</span>
-          <span :class="uploadComplete ? 'text-green-600 font-bold' : ''">L2 (Inhouse)</span>
+          <span :class="znpStore.layerStatus[0] ? 'text-blue-500 font-bold' : ''">L0 (MaStR)</span>
+          <span :class="znpStore.layerStatus[1] ? 'text-orange-500 font-bold' : ''">L1 (OSM)</span>
+          <span :class="znpStore.layerStatus[2] ? 'text-green-600 font-bold' : ''">L2 (Inhouse)</span>
         </div>
       </div>
 
