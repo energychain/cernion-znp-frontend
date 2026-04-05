@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { znpService } from '../services/cernionApi'
 
 export const useZnpStore = defineStore('znp', {
   state: () => ({
