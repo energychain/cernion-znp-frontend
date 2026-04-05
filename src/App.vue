@@ -3,6 +3,8 @@ import { ref, onMounted, computed } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useZnpStore } from './store/znpStore'
+import ModalAssetTable from './components/ModalAssetTable.vue'
+import ModalPdfData from './components/ModalPdfData.vue'
 
 const znpStore = useZnpStore()
 
@@ -46,6 +48,17 @@ const selectVnb = async () => {
   
   const bbox = { south: 49.38, west: 8.63, north: 49.43, east: 8.74 }
   await znpStore.initializeWorkspace(bbox, vnb.id)
+  
+  const mockAssets = [
+    { mastrNummer: "SEE928374", capacity: 10.5, assetType: "solar", status: "In Betrieb", commissioningDate: "2015-05-12", lat: 49.4, lon: 8.7 },
+    { mastrNummer: "SEE182736", capacity: 5.0, assetType: "solar", status: "In Betrieb", commissioningDate: "2018-08-20", lat: 49.41, lon: 8.69 },
+    { mastrNummer: "SEE002938", capacity: 22.0, assetType: "solar", status: "In Betrieb", commissioningDate: "2020-01-10", lat: 49.39, lon: 8.71 },
+    { mastrNummer: "SEE554433", capacity: 8.5, assetType: "solar", status: "In Betrieb", commissioningDate: "2021-06-30", lat: 49.42, lon: 8.68 },
+    { mastrNummer: "SEE998877", capacity: 100.0, assetType: "solar", status: "In Planung", commissioningDate: "2026-10-01", lat: 49.40, lon: 8.72 },
+    { mastrNummer: "SEE443322", capacity: 50.0, assetType: "storage", status: "In Planung", commissioningDate: "2026-11-15", lat: 49.38, lon: 8.64 },
+    { mastrNummer: "SEE776655", capacity: 15.0, assetType: "storage", status: "In Betrieb", commissioningDate: "2023-04-05", lat: 49.41, lon: 8.73 }
+  ]
+  await znpStore.ingestLayer0(mockAssets)
 }
 
 const fileInput = ref(null)
@@ -109,10 +122,10 @@ const currentKpi = computed(() => {
       
       <!-- NEW: Information Feedback Loop (Layer 0 MaStR Stats Overlay) -->
       <transition enter-active-class="transition ease-out duration-300" enter-from-class="transform opacity-0 -translate-y-4" enter-to-class="transform opacity-100 translate-y-0">
-          <div v-if="znpStore.networkStats" class="absolute top-4 left-4 z-[1000] bg-white p-3 rounded-lg shadow-lg border border-gray-200 text-xs w-64">
-            <div class="font-bold border-b border-gray-100 pb-1 mb-2 text-gray-700 flex justify-between">
+          <div v-if="znpStore.networkStats" @click="znpStore.openModal('assets')" class="absolute top-4 left-4 z-[1000] bg-white p-3 rounded-lg shadow-lg border border-gray-200 text-xs w-64 cursor-pointer hover:bg-slate-50 transition-colors group">
+            <div class="font-bold border-b border-gray-100 pb-1 mb-2 text-gray-700 flex justify-between items-center">
                 <span>📊 MaStR Inventar</span>
-                <span class="text-green-500">Live</span>
+                <span class="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">Details ↗</span>
             </div>
             <div class="flex justify-between mb-1"><span class="text-gray-500">PV-Anlagen:</span> <span class="font-bold">{{znpStore.networkStats.pv.count}} ({{znpStore.networkStats.pv.totalKw}} kW)</span></div>
             <div class="flex justify-between mb-1"><span class="text-gray-500">Speicher:</span> <span class="font-bold">{{znpStore.networkStats.storage.count}}</span></div>
@@ -153,11 +166,14 @@ const currentKpi = computed(() => {
 
             <!-- NEW: Information Feedback Loop (Extracted Document Data) -->
             <transition enter-active-class="transition ease-out duration-300" enter-from-class="transform opacity-0 -translate-y-2" enter-to-class="transform opacity-100 translate-y-0">
-                <div v-if="znpStore.extractedPdfData" class="bg-slate-50 p-2 rounded text-[10px] text-gray-600 border border-gray-200">
-                    <div class="font-bold mb-1 text-gray-700">🔍 Extrahierte Inhouse-Parameter:</div>
-                    <div><span class="font-medium">Jahreshöchstlast (Einspeisung):</span> {{znpStore.extractedPdfData.peakFeedIn.value}} kW ({{znpStore.extractedPdfData.peakFeedIn.date}}, {{znpStore.extractedPdfData.peakFeedIn.time}})</div>
-                    <div><span class="font-medium">Jahreshöchstlast (Entnahme):</span> {{znpStore.extractedPdfData.peakLoad.value}} kW ({{znpStore.extractedPdfData.peakLoad.date}}, {{znpStore.extractedPdfData.peakLoad.time}})</div>
-                    <div class="text-gray-400 mt-1 italic">Quelle: {{znpStore.extractedPdfData.docName}} - {{znpStore.extractedPdfData.peakFeedIn.source}}</div>
+                <div v-if="znpStore.extractedPdfData" @click="znpStore.openModal('documents')" class="bg-slate-50 p-2 rounded text-[10px] text-gray-600 border border-gray-200 cursor-pointer hover:bg-slate-100 transition-colors group">
+                    <div class="font-bold mb-1 text-gray-700 flex justify-between items-center">
+                        <span>🔍 Extrahierte Inhouse-Parameter:</span>
+                        <span class="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">Details ↗</span>
+                    </div>
+                    <div><span class="font-medium">Jahreshöchstlast (Einspeisung):</span> {{znpStore.extractedPdfData.peakFeedIn.value}} kW</div>
+                    <div><span class="font-medium">Jahreshöchstlast (Entnahme):</span> {{znpStore.extractedPdfData.peakLoad.value}} kW</div>
+                    <div class="text-gray-400 mt-1 italic truncate">Quelle: {{znpStore.extractedPdfData.docName}}</div>
                 </div>
             </transition>
           </div>
@@ -241,6 +257,23 @@ const currentKpi = computed(() => {
 
     </div>
   </div>
+
+  <!-- Modals -->
+  <transition enter-active-class="transition ease-out duration-200" enter-from-class="opacity-0" enter-to-class="opacity-100" leave-active-class="transition ease-in duration-150" leave-from-class="opacity-100" leave-to-class="opacity-0">
+    <ModalAssetTable 
+      v-if="znpStore.activeModal === 'assets'" 
+      :assets="znpStore.assets" 
+      @close="znpStore.closeModal()" 
+    />
+  </transition>
+
+  <transition enter-active-class="transition ease-out duration-200" enter-from-class="opacity-0" enter-to-class="opacity-100" leave-active-class="transition ease-in duration-150" leave-from-class="opacity-100" leave-to-class="opacity-0">
+    <ModalPdfData 
+      v-if="znpStore.activeModal === 'documents'" 
+      :pdfData="znpStore.extractedPdfData" 
+      @close="znpStore.closeModal()" 
+    />
+  </transition>
 </template>
 
 <style>
