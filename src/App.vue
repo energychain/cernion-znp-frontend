@@ -203,9 +203,9 @@ const updateKpi = async () => {
         >
         
         <div class="flex justify-between text-xs text-gray-400 mb-2">
-          <span :class="znpStore.layerStatus[0] ? 'text-blue-500 font-bold' : ''">L0 (MaStR)</span>
-          <span :class="znpStore.layerStatus[1] ? 'text-orange-500 font-bold' : ''">L1 (OSM)</span>
-          <span :class="znpStore.layerStatus[2] ? 'text-green-600 font-bold' : ''">L2 (Inhouse)</span>
+          <span :class="znpStore.layerStatus ? (znpStore.layerStatus[0] ? 'text-blue-500 font-bold' : '') : ''">L0 (MaStR)</span>
+          <span :class="znpStore.layerStatus ? (znpStore.layerStatus[1] ? 'text-orange-500 font-bold' : '') : ''">L1 (OSM)</span>
+          <span :class="znpStore.layerStatus ? (znpStore.layerStatus[2] ? 'text-green-600 font-bold' : '') : ''">L2 (Inhouse)</span>
         </div>
       </div>
 
