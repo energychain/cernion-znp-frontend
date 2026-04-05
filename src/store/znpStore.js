@@ -17,7 +17,17 @@ export const useZnpStore = defineStore('znp', {
     strategicAssumptions: [],
 
     // Modal State Control
-    activeModal: null // null | 'assets' | 'documents' | 'assumptions'
+    activeModal: null, // null | 'assets' | 'documents' | 'assumptions'
+    
+    // Server-Side Paginated Assets
+    assetInventory: {
+      data: [],
+      totalCount: 0,
+      limit: 15,
+      offset: 0,
+      statusFilter: '', 
+      isLoading: false
+    }
   }),
 
   actions: {
@@ -37,10 +47,40 @@ export const useZnpStore = defineStore('znp', {
 
     openModal(modalName) {
       this.activeModal = modalName;
+      if (modalName === 'assets' && this.projectId) {
+        this.fetchAssetInventory();
+      }
     },
 
     closeModal() {
       this.activeModal = null;
+    },
+
+    async fetchAssetInventory(resetOffset = false) {
+      if (!this.projectId) return;
+      
+      this.assetInventory.isLoading = true;
+      if (resetOffset) this.assetInventory.offset = 0;
+
+      const params = {
+        limit: this.assetInventory.limit,
+        offset: this.assetInventory.offset,
+        sortByCapacity: 'desc'
+      };
+
+      if (this.assetInventory.statusFilter) {
+        params.status = this.assetInventory.statusFilter;
+      }
+
+      try {
+        const result = await znpService.getProjectAssets(this.projectId, params);
+        this.assetInventory.data = result.assets;
+        this.assetInventory.totalCount = result.totalCount;
+      } catch (e) {
+        console.error("Failed to load assets:", e);
+      } finally {
+        this.assetInventory.isLoading = false;
+      }
     },
 
     async initializeWorkspace(bboxObject, vnbId) {

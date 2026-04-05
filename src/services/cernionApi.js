@@ -62,5 +62,12 @@ export const znpService = {
   async getJobStatus(jobId) {
     const res = await api.get(`/jobs/${jobId}/status`);
     return res.data;
+  },
+
+  // 8. Lade MaStR Asset Inventory (Paginierte Liste)
+  async getProjectAssets(projectId, params = { limit: 100, offset: 0, sortByCapacity: 'desc' }) {
+    const query = new URLSearchParams(params).toString();
+    const res = await api.get(`/znp/projects/${projectId}/assets?${query}`);
+    return res.data;
   }
 };
