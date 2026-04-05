@@ -168,17 +168,17 @@ const updateKpi = async () => {
         <p class="text-xs text-gray-500 mb-3">Laden Sie unstrukturierte Veröffentlichungspflichten (PDF/XLSX/CSV) zur KI-Extraktion der realen Netzauslastung hoch.</p>
         
         <div 
-          @click="!znpStore.layerStatus[2] && !znpStore.isProcessing ? triggerFileInput() : null"
+          @click="znpStore.layerStatus && !znpStore.layerStatus[2] && !znpStore.isProcessing ? triggerFileInput() : null"
           class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer transition-colors"
-          :class="znpStore.layerStatus[2] ? 'bg-green-50 border-green-300' : 'hover:bg-blue-50 hover:border-blue-400'"
+          :class="znpStore.layerStatus && znpStore.layerStatus[2] ? 'bg-green-50 border-green-300' : 'hover:bg-blue-50 hover:border-blue-400'"
         >
           <input type="file" ref="fileInput" @change="handleFileUpload" accept=".pdf,.csv,.xlsx" class="hidden" />
 
-          <div v-if="znpStore.isProcessing && !znpStore.layerStatus[2]" class="text-blue-600 font-medium text-sm flex items-center justify-center gap-2">
+          <div v-if="znpStore.isProcessing && znpStore.layerStatus && !znpStore.layerStatus[2]" class="text-blue-600 font-medium text-sm flex items-center justify-center gap-2">
             <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
             Analysiere Dokumente...
           </div>
-          <div v-else-if="znpStore.layerStatus[2]" class="text-green-600 font-medium text-sm">
+          <div v-else-if="znpStore.layerStatus && znpStore.layerStatus[2]" class="text-green-600 font-medium text-sm">
             ✅ Lastspitzen extrahiert (Layer 2 aktiv)
           </div>
           <div v-else class="text-gray-600 font-medium text-sm">
