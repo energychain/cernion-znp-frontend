@@ -91,45 +91,46 @@ export const useZnpStore = defineStore('znp', {
       this.log(`Initialisiere ZNP Workspace für Bounding Box...`);
       
       try {
-        await new Promise(r => setTimeout(r, 600));
-        this.projectId = 'mock-uuid-' + Date.now();
+        const result = await znpService.createProject(bboxObject);
+        this.projectId = result.projectId;
+        this.bbox = result.bbox;
         this.log(`Workspace ${this.projectId} erfolgreich erstellt.`);
         
         this.log(`Lade MaStR Assets für Layer 0...`);
-        await new Promise(r => setTimeout(r, 800));
+        // Da wir das Cernion Backend noch nicht vollständig haben, was das Asset-Loading automatisiert:
+        // Wir schicken dem Backend die Mock-Assets (mit 'In Planung'), damit es die Datenbank für den Table füllt!
+        const mockAssets = [
+          { mastrNummer: "SEE928374", capacity: 10.5, assetType: "solar", status: "In Betrieb", commissioningDate: "2015-05-12", lat: 49.4, lon: 8.7 },
+          { mastrNummer: "SEE182736", capacity: 5.0, assetType: "solar", status: "In Betrieb", commissioningDate: "2018-08-20", lat: 49.41, lon: 8.69 },
+          { mastrNummer: "SEE002938", capacity: 22.0, assetType: "solar", status: "In Betrieb", commissioningDate: "2020-01-10", lat: 49.39, lon: 8.71 },
+          { mastrNummer: "SEE554433", capacity: 8.5, assetType: "solar", status: "In Betrieb", commissioningDate: "2021-06-30", lat: 49.42, lon: 8.68 },
+          { mastrNummer: "SEE998877", capacity: 100.0, assetType: "solar", status: "In Planung", commissioningDate: "2026-10-01", lat: 49.40, lon: 8.72 },
+          { mastrNummer: "SEE443322", capacity: 50.0, assetType: "storage", status: "In Planung", commissioningDate: "2026-11-15", lat: 49.38, lon: 8.64 },
+          { mastrNummer: "SEE776655", capacity: 15.0, assetType: "storage", status: "In Betrieb", commissioningDate: "2023-04-05", lat: 49.41, lon: 8.73 }
+        ]
+        const ingestResult = await znpService.addLayer0(this.projectId, mockAssets);
         
         if (vnbId === 'hd') {
-            this.networkStats = {
-                pv: { count: 342, totalKw: 3150, avgKw: 9.2 },
-                wind: { count: 0, totalKw: 0 },
-                storage: { count: 85, totalKw: 420 },
-                chp: { count: 2, totalKw: 800 }
-            };
+            this.networkStats = { pv: { count: 342, totalKw: 3150 }, wind: { count: 0, totalKw: 0 }, storage: { count: 85, totalKw: 420 }, chp: { count: 2, totalKw: 800 } };
         } else {
-            this.networkStats = {
-                pv: { count: 128, totalKw: 1050, avgKw: 8.2 },
-                wind: { count: 1, totalKw: 2500 },
-                storage: { count: 24, totalKw: 120 },
-                chp: { count: 0, totalKw: 0 }
-            };
+            this.networkStats = { pv: { count: 128, totalKw: 1050 }, wind: { count: 1, totalKw: 2500 }, storage: { count: 24, totalKw: 120 }, chp: { count: 0, totalKw: 0 } };
         }
         
         this.layerStatus[0] = true;
-        this.log(`Layer 0 (MaStR Baseline) synchronisiert. ${this.networkStats.pv.count + this.networkStats.wind.count + this.networkStats.storage.count} Knoten erstellt.`);
+        this.log(`Layer 0 (MaStR Baseline) synchronisiert. ${ingestResult.nodesAdded} Knoten im Graphen erstellt.`);
         
-        this.currentLayer = 0;
-        this.gFactorResult = { capacity: 1500, simultaneityFactor: 1.0 };
-        
+        await this.fetchGFactor(0);
       } catch (e) {
         this.log(`Fehler bei Workspace Initialisierung: ${e.message}`);
+        console.error(e);
       } finally {
         this.isProcessing = false;
       }
     },
 
     async ingestLayer0(mastrAssets) {
-        // Safe the extended mock assets for the modal table
-        this.assets = mastrAssets;
+        // This is now handled automatically within initializeWorkspace for the pitch flow.
+        // Left empty intentionally.
     },
 
     async analyzePDFDocument(file) {
