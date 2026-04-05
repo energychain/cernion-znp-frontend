@@ -8,7 +8,7 @@ export default defineConfig({
     allowedHosts: ['znp.corrently.io'],
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://10.0.0.8:3900',
         changeOrigin: true
       }
     }
