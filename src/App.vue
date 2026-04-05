@@ -11,10 +11,8 @@ const polygonLayer = ref(null)
 const targetLayer = ref(0)
 const selectedVnb = ref('')
 
-// NOVA Heuristics & §14a
-const flex14a = ref(false)
-const novaQU = ref(false)
-const novaRONT = ref(false)
+// Conversational Planner Input
+const plannerInput = ref('')
 
 // Mock VNB Digital Data (Polygons & Center)
 const vnbList = [
@@ -25,7 +23,8 @@ const vnbList = [
 const gFactorMap = {
   0: { capacity: 1500, gFactor: 1.0, label: "Worst-Case (Public Baseline)", color: "text-red-600" },
   1: { capacity: 1100, gFactor: 0.73, label: "Räumliches Cluster (OSM)", color: "text-orange-500" },
-  2: { capacity: 650, gFactor: 0.43, label: "Gemessene Last (Inhouse PDFs)", color: "text-amber-500" }
+  2: { capacity: 650, gFactor: 0.43, label: "Gemessene Last (Inhouse PDFs)", color: "text-amber-500" },
+  2.5: { capacity: 650, gFactor: 0.13, label: "Strategische Planung (Flex NAV)", color: "text-emerald-600" } // The Chatbot reward
 }
 
 onMounted(() => {
@@ -43,21 +42,10 @@ const selectVnb = async () => {
   polygonLayer.value = L.geoJSON(vnb.geojson, { style: { color: '#3b82f6', weight: 2, opacity: 0.8, fillColor: '#3b82f6', fillOpacity: 0.2 } }).addTo(map.value)
   
   targetLayer.value = 0
-  flex14a.value = false; novaQU.value = false; novaRONT.value = false;
-  znpStore.layerStatus = { 0: false, 1: false, 2: false }
-  znpStore.gFactorResult = null
+  plannerInput.value = ''
   
   const bbox = { south: 49.38, west: 8.63, north: 49.43, east: 8.74 }
-  await znpStore.initializeWorkspace(bbox)
-  
-  const mockAssets = [
-    { mastrNummer: "SEE928374", capacity: 10.5, assetType: "solar", lat: 49.4, lon: 8.7 },
-    { mastrNummer: "SEE182736", capacity: 5.0, assetType: "solar", lat: 49.41, lon: 8.69 },
-    { mastrNummer: "SEE002938", capacity: 22.0, assetType: "solar", lat: 49.39, lon: 8.71 },
-    { mastrNummer: "SEE554433", capacity: 8.5, assetType: "solar", lat: 49.42, lon: 8.68 },
-    { mastrNummer: "SEE998877", capacity: 100.0, assetType: "solar", lat: 49.40, lon: 8.72 }
-  ]
-  await znpStore.ingestLayer0(mockAssets)
+  await znpStore.initializeWorkspace(bbox, vnb.id)
 }
 
 const fileInput = ref(null)
@@ -70,42 +58,47 @@ const handleFileUpload = async (event) => {
   targetLayer.value = 2
 }
 
-// Compute the Pitch-Ready KPI Board based on Layers AND the new NOVA/14a Toggles
+const sendStrategicAssumption = async () => {
+  if (!plannerInput.value.trim()) return
+  
+  // KI Extraktion triggern
+  await znpStore.addStrategicAssumption(plannerInput.value)
+  plannerInput.value = ''
+  
+  // Wenn flexibel, belohnen wir mit Layer 2.5 KPI (0 Kupferausbau)
+  targetLayer.value = 2.5
+}
+
+// Compute the Pitch-Ready KPI Board based on Layers
 const currentKpi = computed(() => {
   if (!selectedVnb.value) return null;
+  const layerKey = Math.floor(targetLayer.value); // Fallback falls 2.5 nicht da
+  
+  let cap = znpStore.gFactorResult ? znpStore.gFactorResult.capacity : gFactorMap[layerKey].capacity;
+  let gF = znpStore.gFactorResult ? znpStore.gFactorResult.simultaneityFactor : gFactorMap[layerKey].gFactor;
+  let label = gFactorMap[layerKey].label;
+  let color = gFactorMap[layerKey].color;
 
-  // Base calculation from Backend Layer or Mock
-  let cap = gFactorMap[targetLayer.value].capacity;
-  let gF = gFactorMap[targetLayer.value].gFactor;
-  let label = gFactorMap[targetLayer.value].label;
-  let color = gFactorMap[targetLayer.value].color;
-
-  if (znpStore.gFactorResult && znpStore.currentLayer === targetLayer.value) {
-    cap = znpStore.gFactorResult.adjustedCapacityKW || cap;
-    gF = znpStore.gFactorResult.simultaneityFactor || gF;
-  }
-
-  // Apply §14a EnWG and NOVA Heuristics (Pitch Math)
-  if (flex14a.value) {
-    cap *= 0.85; gF *= 0.85;
-    label = "§14a Spitzenkappung aktiv"; color = "text-green-500";
-  }
-  if (novaQU.value) {
-    cap *= 0.90; gF *= 0.90; // +10-15% Capacity gain through Voltage Mgmt
-    label = "Q(U) Optimierung aktiv"; color = "text-emerald-500";
-  }
-  if (novaRONT.value) {
-    cap *= 0.60; gF *= 0.60; // +40-50% Capacity gain through rONT
-    label = "rONT Verstärkung aktiv"; color = "text-teal-600";
+  // Layer 2.5 (Strategic Assumption) Override
+  if (targetLayer.value === 2.5 && znpStore.strategicAssumptions.length > 0) {
+      const lastAssumption = znpStore.strategicAssumptions[znpStore.strategicAssumptions.length - 1];
+      if (lastAssumption.hasFlexibleNav) {
+          // Keine zusätzliche Kupferlast für die 5 MW, der g-Faktor sinkt drastisch durch den flexiblen Großspeicher
+          cap = 650; 
+          gF = 0.13; // (650 kW / (1500 kW + 5000 kW) = 0.1)
+          label = "Strategische Planung (Flexibler NAV)"; 
+          color = "text-emerald-600";
+      } else {
+          // Erschreckender Worst Case: Der 5 MW Speicher wird knallhart mit 1.0 oben drauf gerechnet
+          cap = 5650; 
+          gF = 1.0; 
+          label = "Warnung: Kritischer Netzausbau (Starrer Anschluss)"; 
+          color = "text-red-600";
+      }
   }
 
   return { capacity: Math.round(cap), gFactor: gF, label, color };
 });
-
-const generateReport = () => {
-    znpStore.log(`Erstelle gesetzlichen Netzausbauplan-Report (PDF) für BNetzA...`);
-    setTimeout(() => znpStore.log(`Report erfolgreich exportiert!`), 1200);
-}
 </script>
 
 <template>
@@ -113,103 +106,143 @@ const generateReport = () => {
     <!-- Left: Leaflet Map -->
     <div class="w-full md:w-2/3 h-1/2 md:h-full relative z-0">
       <div id="map" class="w-full h-full"></div>
-      <div class="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-white px-4 py-2 rounded-full shadow-lg border border-gray-200 font-semibold text-sm flex items-center gap-2">
-        <span class="w-2 h-2 rounded-full" :class="selectedVnb ? 'bg-green-500' : 'bg-red-500'"></span>
-        {{ selectedVnb ? vnbList.find(v => v.id === selectedVnb).name : 'Kein Netzgebiet ausgewählt' }}
-      </div>
+      
+      <!-- NEW: Information Feedback Loop (Layer 0 MaStR Stats Overlay) -->
+      <transition enter-active-class="transition ease-out duration-300" enter-from-class="transform opacity-0 -translate-y-4" enter-to-class="transform opacity-100 translate-y-0">
+          <div v-if="znpStore.networkStats" class="absolute top-4 left-4 z-[1000] bg-white p-3 rounded-lg shadow-lg border border-gray-200 text-xs w-64">
+            <div class="font-bold border-b border-gray-100 pb-1 mb-2 text-gray-700 flex justify-between">
+                <span>📊 MaStR Inventar</span>
+                <span class="text-green-500">Live</span>
+            </div>
+            <div class="flex justify-between mb-1"><span class="text-gray-500">PV-Anlagen:</span> <span class="font-bold">{{znpStore.networkStats.pv.count}} ({{znpStore.networkStats.pv.totalKw}} kW)</span></div>
+            <div class="flex justify-between mb-1"><span class="text-gray-500">Speicher:</span> <span class="font-bold">{{znpStore.networkStats.storage.count}}</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">Wind / KWK:</span> <span class="font-bold">{{znpStore.networkStats.wind.count + znpStore.networkStats.chp.count}}</span></div>
+          </div>
+      </transition>
     </div>
 
     <!-- Right: Control Panel (§14d EnWG Workflow) -->
-    <div class="w-full md:w-1/3 h-1/2 md:h-full bg-slate-50 border-l border-gray-200 p-5 flex flex-col overflow-y-auto relative">
-      <h1 class="text-xl font-bold mb-1">Cernion ZNP Workspace</h1>
-      <p class="text-xs text-gray-500 mb-5 font-medium">Netzausbauplanung gemäß § 14d EnWG</p>
-
-      <!-- Phase 1: Regionalszenario -->
-      <div class="mb-4 p-3 bg-white rounded-lg shadow-sm border border-gray-100 border-l-4 border-l-blue-500">
-        <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">1. Regionalszenario (MaStR)</h2>
-        <select v-model="selectedVnb" @change="selectVnb" class="w-full border border-gray-300 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500 mb-1 bg-white">
-          <option value="" disabled>Verteilnetzbetreiber wählen...</option>
-          <option v-for="vnb in vnbList" :key="vnb.id" :value="vnb.id">{{ vnb.name }}</option>
-        </select>
-        <p class="text-[10px] text-gray-500" v-if="selectedVnb">✅ Polygon, MaStR & OSM geladen.</p>
-      </div>
-
-      <!-- Phase 2: Ist-Netz & Engpassanalyse -->
-      <div class="mb-4 p-3 bg-white rounded-lg shadow-sm border border-gray-100" :class="{'opacity-50 pointer-events-none': !selectedVnb}">
-        <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">2. Ist-Netz & Engpassanalyse</h2>
-        
-        <input type="range" min="0" max="2" step="1" v-model.number="targetLayer" @change="async () => { await znpStore.fetchGFactor(targetLayer); }" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 mb-1">
-        <div class="flex justify-between text-[10px] text-gray-400 mb-3">
-          <span :class="znpStore.layerStatus ? (znpStore.layerStatus[0] ? 'text-blue-500 font-bold' : '') : ''">L0 (MaStR)</span>
-          <span :class="znpStore.layerStatus ? (znpStore.layerStatus[1] ? 'text-orange-500 font-bold' : '') : ''">L1 (OSM)</span>
-          <span :class="znpStore.layerStatus ? (znpStore.layerStatus[2] ? 'text-green-600 font-bold' : '') : ''">L2 (Inhouse)</span>
-        </div>
-
-        <div @click="znpStore.layerStatus && !znpStore.layerStatus[2] && !znpStore.isProcessing ? triggerFileInput() : null" class="border border-dashed border-gray-300 rounded p-2 text-center cursor-pointer transition-colors" :class="znpStore.layerStatus && znpStore.layerStatus[2] ? 'bg-green-50 border-green-300' : 'hover:bg-blue-50'">
-          <input type="file" ref="fileInput" @change="handleFileUpload" accept=".pdf,.csv,.xlsx" class="hidden" />
-          <div v-if="znpStore.isProcessing && znpStore.layerStatus && !znpStore.layerStatus[2]" class="text-blue-600 text-xs font-medium flex justify-center items-center gap-1">
-            <svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Analysiere...
-          </div>
-          <div v-else-if="znpStore.layerStatus && znpStore.layerStatus[2]" class="text-green-600 text-xs font-bold">✅ Messdaten extrahiert (L2)</div>
-          <div v-else class="text-gray-500 text-xs">📄 VNB Struktur-PDF hier ablegen</div>
-        </div>
-      </div>
-
-      <!-- Phase 3: Flexibilität -->
-      <div class="mb-4 p-3 bg-white rounded-lg shadow-sm border border-gray-100" :class="{'opacity-50 pointer-events-none': !selectedVnb}">
-        <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">3. Flexibilität (§14a / §42c)</h2>
-        <label class="flex items-center gap-2 cursor-pointer text-sm">
-          <input type="checkbox" v-model="flex14a" class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
-          <span class="text-gray-700 text-xs font-medium">Steuerbare Verbrauchseinrichtungen (4,2 kW Mindestbezug) anrechnen</span>
-        </label>
-      </div>
-
-      <!-- Phase 4: NOVA (Zielnetz) -->
-      <div class="mb-4 p-3 bg-white rounded-lg shadow-sm border border-gray-100" :class="{'opacity-50 pointer-events-none': !selectedVnb}">
-        <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">4. Zielnetz-Entwicklung (NOVA)</h2>
-        <div class="flex flex-col gap-2">
-          <label class="flex items-center gap-2 cursor-pointer text-sm">
-            <input type="checkbox" v-model="novaQU" class="w-4 h-4 text-blue-600 rounded border-gray-300">
-            <span class="text-gray-700 text-xs">Blindleistungsmanagement (Q/U) - <span class="font-bold text-gray-500">O</span>ptimierung</span>
-          </label>
-          <label class="flex items-center gap-2 cursor-pointer text-sm">
-            <input type="checkbox" v-model="novaRONT" class="w-4 h-4 text-blue-600 rounded border-gray-300">
-            <span class="text-gray-700 text-xs">Einsatz rONT (Regelbarer Trafo) - <span class="font-bold text-gray-500">V</span>erstärkung</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- KPI Dashboard -->
-      <div v-if="currentKpi" class="mb-4 p-4 bg-white rounded-lg shadow-md border-t-4 transition-colors duration-300" :class="currentKpi.gFactor < 0.6 ? 'border-green-500' : (currentKpi.gFactor < 0.9 ? 'border-orange-400' : 'border-red-500')">
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <div class="text-[10px] uppercase text-gray-400 mb-1">Peak-Last Engpass</div>
-            <div class="text-2xl font-black" :class="currentKpi.color">{{ currentKpi.capacity }} <span class="text-xs font-normal text-gray-500">kW</span></div>
-          </div>
-          <div>
-            <div class="text-[10px] uppercase text-gray-400 mb-1">Gleichzeitigkeit (g)</div>
-            <div class="text-2xl font-black text-gray-700">{{ currentKpi.gFactor }}</div>
-          </div>
-        </div>
-        <div class="mt-3 pt-2 border-t border-gray-100 flex justify-between items-center">
-          <span class="text-[10px] font-bold text-gray-400">Vermiedener Ausbau (A):</span>
-          <span class="text-sm font-bold" :class="currentKpi.capacity < 1500 ? 'text-green-600' : 'text-gray-300'">+ {{ 1500 - currentKpi.capacity }} kW</span>
-        </div>
-      </div>
+    <div class="w-full md:w-1/3 h-1/2 md:h-full bg-slate-50 border-l border-gray-200 flex flex-col relative overflow-hidden">
       
-      <!-- Phase 5: Reporting -->
-      <button v-if="currentKpi" @click="generateReport" class="w-full bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2.5 rounded shadow mb-4 transition-colors">
-        5. Netzausbauplan-Report generieren
-      </button>
+      <div class="p-5 flex-shrink-0">
+          <h1 class="text-xl font-bold mb-1">Cernion ZNP Workspace</h1>
+          <p class="text-xs text-gray-500 font-medium">Iterative Netzplanung als "Living Document"</p>
+      </div>
 
-      <!-- Agent Log Console -->
-      <div v-if="znpStore.logMessages.length > 0" class="p-2 bg-slate-900 rounded-lg shadow-inner overflow-y-auto h-24 border border-slate-700 font-mono text-[9px] leading-tight mt-auto">
-        <div class="text-green-400 mb-1 font-bold border-b border-slate-700 pb-1">A²MDM Logs</div>
-        <div v-for="(log, idx) in znpStore.logMessages" :key="idx">
-          <span class="text-slate-500">[{{ log.time }}]</span> <span class="text-slate-300">{{ log.msg }}</span>
-        </div>
+      <div class="p-5 overflow-y-auto flex-grow pb-24">
+          <!-- Phase 1: Regionalszenario -->
+          <div class="mb-4 p-3 bg-white rounded-lg shadow-sm border border-gray-100 border-l-4 border-l-blue-500">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">1. Regionalszenario & Topologie</h2>
+            <select v-model="selectedVnb" @change="selectVnb" class="w-full border border-gray-300 rounded p-1.5 text-sm focus:ring-2 focus:ring-blue-500 mb-1 bg-white">
+              <option value="" disabled>Verteilnetzbetreiber wählen...</option>
+              <option v-for="vnb in vnbList" :key="vnb.id" :value="vnb.id">{{ vnb.name }}</option>
+            </select>
+          </div>
+
+          <!-- Phase 2: Unstrukturierte Inhouse Daten (PDF) -->
+          <div class="mb-4 p-3 bg-white rounded-lg shadow-sm border border-gray-100" :class="{'opacity-50 pointer-events-none': !selectedVnb}">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">2. Inhouse Intelligence (PDF Extraktion)</h2>
+            <div @click="znpStore.layerStatus && !znpStore.layerStatus[2] && !znpStore.isProcessing ? triggerFileInput() : null" class="border border-dashed border-gray-300 rounded p-2 text-center cursor-pointer transition-colors mb-3" :class="znpStore.layerStatus && znpStore.layerStatus[2] ? 'bg-green-50 border-green-300' : 'hover:bg-blue-50'">
+              <input type="file" ref="fileInput" @change="handleFileUpload" accept=".pdf,.csv,.xlsx" class="hidden" />
+              <div v-if="znpStore.isProcessing && znpStore.layerStatus && !znpStore.layerStatus[2]" class="text-blue-600 text-xs font-medium flex justify-center items-center gap-1">
+                <svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Analysiere Strukturdaten...
+              </div>
+              <div v-else-if="znpStore.layerStatus && znpStore.layerStatus[2]" class="text-green-600 text-xs font-bold">✅ Messdaten in Graphen integriert</div>
+              <div v-else class="text-gray-500 text-xs">📄 VNB StromNZV §23c Berichte hier ablegen</div>
+            </div>
+
+            <!-- NEW: Information Feedback Loop (Extracted Document Data) -->
+            <transition enter-active-class="transition ease-out duration-300" enter-from-class="transform opacity-0 -translate-y-2" enter-to-class="transform opacity-100 translate-y-0">
+                <div v-if="znpStore.extractedPdfData" class="bg-slate-50 p-2 rounded text-[10px] text-gray-600 border border-gray-200">
+                    <div class="font-bold mb-1 text-gray-700">🔍 Extrahierte Inhouse-Parameter:</div>
+                    <div><span class="font-medium">Jahreshöchstlast (Einspeisung):</span> {{znpStore.extractedPdfData.peakFeedIn.value}} kW ({{znpStore.extractedPdfData.peakFeedIn.date}}, {{znpStore.extractedPdfData.peakFeedIn.time}})</div>
+                    <div><span class="font-medium">Jahreshöchstlast (Entnahme):</span> {{znpStore.extractedPdfData.peakLoad.value}} kW ({{znpStore.extractedPdfData.peakLoad.date}}, {{znpStore.extractedPdfData.peakLoad.time}})</div>
+                    <div class="text-gray-400 mt-1 italic">Quelle: {{znpStore.extractedPdfData.docName}} - {{znpStore.extractedPdfData.peakFeedIn.source}}</div>
+                </div>
+            </transition>
+          </div>
+
+          <!-- Phase 3: Conversational Advisor (Layer 2.5) -->
+          <div class="mb-4 p-3 bg-white rounded-lg shadow-sm border border-gray-100" :class="{'opacity-50 pointer-events-none': !znpStore.layerStatus || !znpStore.layerStatus[2]}">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">3. Strategic Planning Context</h2>
+            <div class="bg-blue-50 text-blue-800 text-[10px] p-2 rounded mb-2 border border-blue-100">
+                <span class="font-bold">Cernion A²MDM fragt:</span><br/>
+                Ich erkenne ein 15ha Gewerbegebiet (OSM) in diesem Polygon. Sind für die kommenden 3 Jahre bereits konkrete Bauvoranfragen (z.B. Rechenzentren, Großspeicher) bekannt, die noch nicht im MaStR erfasst sind?
+            </div>
+            
+            <!-- Chat Input -->
+            <div class="flex flex-col gap-2">
+                <textarea 
+                    v-model="plannerInput" 
+                    placeholder="Planer-Wissen teilen (z.B. 'Am Brückweg ist ein 5MW Speicher mit flexiblem NAV geplant...')"
+                    class="w-full text-xs p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none h-16 bg-white"
+                ></textarea>
+                <button 
+                    @click="sendStrategicAssumption" 
+                    :disabled="!plannerInput || znpStore.isProcessing"
+                    class="self-end bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold py-1.5 px-3 rounded shadow transition-colors disabled:opacity-50"
+                >
+                    Wissen in Graphen einspeisen
+                </button>
+            </div>
+
+            <!-- NEW: Information Feedback Loop (Assumptions) -->
+            <div v-if="znpStore.strategicAssumptions.length > 0" class="mt-3">
+                <div v-for="asset in znpStore.strategicAssumptions" :key="asset.id" class="bg-emerald-50 border border-emerald-200 p-2 rounded text-[10px] flex justify-between items-center mb-1">
+                    <div>
+                        <span class="font-bold text-emerald-800">{{asset.capacityKw}} kW {{asset.type}}</span> <span class="text-emerald-600">({{asset.location}})</span>
+                    </div>
+                    <span v-if="asset.hasFlexibleNav" class="bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-bold">Flex. NAV (§14a)</span>
+                    <span v-else class="bg-red-200 text-red-800 px-1.5 py-0.5 rounded font-bold">Starrer Anschluss</span>
+                </div>
+            </div>
+          </div>
+          
+          <!-- What-If Slider (Now hidden in logic, driven by targetLayer but visualised as timeline) -->
+          <div class="mb-4" v-if="selectedVnb">
+            <div class="flex justify-between text-[10px] text-gray-400 px-1 mb-1 font-bold">
+              <span :class="znpStore.currentLayer === 0 ? 'text-blue-600' : (znpStore.currentLayer > 0 ? 'text-green-500' : '')">MaStR</span>
+              <span :class="znpStore.currentLayer === 2 ? 'text-blue-600' : (znpStore.currentLayer > 2 ? 'text-green-500' : '')">PDF Upload</span>
+              <span :class="znpStore.currentLayer === 2.5 ? 'text-blue-600' : ''">Strategie</span>
+            </div>
+            <div class="w-full h-1 bg-gray-200 rounded overflow-hidden flex">
+                <div class="h-full transition-all duration-500 bg-green-500" :style="`width: ${znpStore.currentLayer === 0 ? '33' : (znpStore.currentLayer === 2 ? '66' : '100')}%`"></div>
+            </div>
+          </div>
+
+      </div>
+
+      <!-- Bottom Fixed Area: KPI Dashboard & Logs -->
+      <div class="absolute bottom-0 left-0 right-0 bg-slate-50 border-t border-gray-200 p-5 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)]">
+          <div v-if="currentKpi" class="bg-white rounded-lg shadow-md border-l-4 p-3 transition-colors duration-300" :class="currentKpi.gFactor < 0.6 ? 'border-green-500' : (currentKpi.gFactor < 0.9 ? 'border-orange-400' : 'border-red-500')">
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <div class="text-[9px] uppercase text-gray-400 mb-0.5">Simulierter Engpass (Netz)</div>
+                <div class="text-xl font-black leading-none" :class="currentKpi.color">{{ currentKpi.capacity }} <span class="text-xs font-normal text-gray-500">kW</span></div>
+              </div>
+              <div>
+                <div class="text-[9px] uppercase text-gray-400 mb-0.5">g-Faktor Ø</div>
+                <div class="text-xl font-black text-gray-700 leading-none">{{ currentKpi.gFactor }}</div>
+              </div>
+            </div>
+            <div class="text-[10px] font-bold text-gray-400 mt-2 border-t border-gray-100 pt-1.5 flex justify-between">
+                <span>Szenario: {{currentKpi.label}}</span>
+                <span v-if="currentKpi.capacity < 1500" class="text-green-600">+ {{ 1500 - currentKpi.capacity }} kW frei</span>
+            </div>
+          </div>
+          
+          <!-- Agent Log Console -->
+          <div v-if="znpStore.logMessages.length > 0" class="mt-3 p-1.5 bg-slate-900 rounded shadow-inner overflow-y-auto h-16 border border-slate-700 font-mono text-[8px] leading-tight">
+            <div v-for="(log, idx) in [...znpStore.logMessages].reverse()" :key="idx">
+              <span class="text-slate-500">[{{ log.time }}]</span> <span class="text-slate-300">{{ log.msg }}</span>
+            </div>
+          </div>
       </div>
 
     </div>
   </div>
 </template>
+
+<style>
+body { margin: 0; }
+</style>
